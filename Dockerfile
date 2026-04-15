@@ -6,6 +6,7 @@ RUN npm ci
 COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
+RUN cp -r src/public dist/public
 
 # Production stage - smaller final image
 FROM node:20-alpine AS production
