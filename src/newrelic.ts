@@ -8,5 +8,11 @@ exports.config = {
   },
   distributed_tracing: {
     enabled: true
+  },
+  error_collector: {
+    enabled: true,
+    ignore_status_codes: [],
+    expected_status_codes: [],
+    capture_events: true
   }
 }
