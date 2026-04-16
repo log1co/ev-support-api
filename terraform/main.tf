@@ -88,7 +88,9 @@ resource "aws_iam_user_policy" "ecr_push" {
           "ecr-public:InitiateLayerUpload",
           "ecr-public:UploadLayerPart",
           "ecr-public:CompleteLayerUpload",
-          "ecr-public:PutImage"
+          "ecr-public:PutImage",
+          "ecr-public:BatchGetImage",
+          "ecr-public:GetDownloadUrlForLayer"
         ]
         Resource = aws_ecrpublic_repository.app.arn
       }
