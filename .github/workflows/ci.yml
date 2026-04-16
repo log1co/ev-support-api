@@ -77,12 +77,15 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
         with:
           registry-type: public
+        env:
+          AWS_REGION: us-east-1
 
       - name: Build, tag, and push image
         id: build
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           SHA_TAG: sha-${{ github.sha }}
+          AWS_REGION: us-east-1
         run: |
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$SHA_TAG .
           docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$SHA_TAG $ECR_REGISTRY/$ECR_REPOSITORY:pre
@@ -112,13 +115,18 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Log in to Amazon ECR
+      - name: Log in to Amazon ECR Public
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
+        env:
+          AWS_REGION: us-east-1
 
       - name: Retag :pre as :rc in ECR
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          AWS_REGION: us-east-1
         run: |
           MANIFEST=$(aws ecr batch-get-image \
             --repository-name $ECR_REPOSITORY \
