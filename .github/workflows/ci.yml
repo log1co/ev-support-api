@@ -135,19 +135,13 @@ jobs:
 
       - name: Retag :pre as :rc in ECR
         env:
+          ECR_REGISTRY: public.ecr.aws
+          ECR_ALIAS: ${{ secrets.ECR_PUBLIC_ALIAS }}
           AWS_REGION: us-east-1
         run: |
-          MANIFEST=$(aws ecr batch-get-image \
-            --region us-east-1 \
-            --repository-name $ECR_REPOSITORY \
-            --image-ids imageTag=pre \
-            --query 'images[0].imageManifest' \
-            --output text)
-          aws ecr put-image \
-            --region us-east-1 \
-            --repository-name $ECR_REPOSITORY \
-            --image-tag rc \
-            --image-manifest "$MANIFEST"
+          docker pull $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:pre
+          docker tag $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:pre $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:rc
+          docker push $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:rc
           echo "Successfully promoted :pre to :rc"
 
       - name: Trigger Render prod deploy
