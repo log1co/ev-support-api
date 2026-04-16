@@ -5,6 +5,13 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      promote_to_prod:
+        description: 'Promote current :pre image to :rc and deploy to prod'
+        required: true
+        type: boolean
+        default: false
 
 env:
   AWS_REGION: eu-west-1
@@ -46,7 +53,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Scan Docker image for vulnerabilities (Trivy)
+      - name: Scan for vulnerabilities (Trivy)
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: "fs"
@@ -54,18 +61,54 @@ jobs:
           severity: "HIGH,CRITICAL"
           exit-code: "1"
 
-  # ── Stage 3: Build & Push to ECR ─────────────────────────────────
+  # ── Stage 3: Build & Push to ECR (on main push only) ─────────────
   build-and-push:
     name: Build & Push Image
     runs-on: ubuntu-latest
     needs: security-scan
-    # Only run on pushes to main, not on PRs
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     outputs:
-      image-tag: ${{ steps.meta.outputs.tags }}
+      image-sha-tag: ${{ steps.build.outputs.sha_tag }}
     steps:
       - uses: actions/checkout@v4
 
+      - name: Log in to Amazon ECR Public
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image
+        id: build
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          SHA_TAG: sha-${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$SHA_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$SHA_TAG $ECR_REGISTRY/$ECR_REPOSITORY:pre
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$SHA_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:pre
+          echo "sha_tag=$SHA_TAG" >> $GITHUB_OUTPUT
+
+  # ── Stage 4: Deploy :pre to Staging ──────────────────────────────
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    steps:
+      - name: Trigger Render staging deploy
+        run: curl -X POST "${{ secrets.RENDER_STAGING_DEPLOY_HOOK }}"
+
+  # ── Stage 5: Promote :pre to :rc and deploy to Prod ──────────────
+  promote-to-prod:
+    name: Promote to Prod
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && inputs.promote_to_prod == true
+    steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -77,24 +120,20 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build, tag, and push image to ECR
-        id: meta
+      - name: Retag :pre as :rc in ECR
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
-          echo "tags=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          MANIFEST=$(aws ecr batch-get-image \
+            --repository-name $ECR_REPOSITORY \
+            --image-ids imageTag=pre \
+            --query 'images[0].imageManifest' \
+            --output text)
+          aws ecr put-image \
+            --repository-name $ECR_REPOSITORY \
+            --image-tag rc \
+            --image-manifest "$MANIFEST"
+          echo "Successfully promoted :pre to :rc"
 
-  # ── Stage 4: Deploy to Render ─────────────────────────────────────
-  deploy:
-    name: Deploy to Render
-    runs-on: ubuntu-latest
-    needs: build-and-push
-    steps:
-      - name: Trigger Render deploy
-        run: |
-          curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+      - name: Trigger Render prod deploy
+        run: curl -X POST "${{ secrets.RENDER_PROD_DEPLOY_HOOK }}"
