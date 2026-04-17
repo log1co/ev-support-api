@@ -74,6 +74,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(git tag --points-at HEAD | grep '^v' | head -n1)
+          if [ -z "$VERSION" ]; then
+            VERSION="sha-${GITHUB_SHA::8}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -96,12 +106,20 @@ jobs:
           ECR_ALIAS: ${{ secrets.ECR_PUBLIC_ALIAS }}
           SHA_TAG: sha-${{ github.sha }}
           AWS_REGION: us-east-1
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:$SHA_TAG .
-          docker tag $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:$SHA_TAG $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:pre
+          docker build \
+            --label "version=$VERSION" \
+            --label "sha=${{ github.sha }}" \
+            -t $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:$SHA_TAG .
+          docker tag $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:$SHA_TAG \
+            $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:$VERSION-pre
+          docker tag $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:$SHA_TAG \
+            $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:pre
           docker push $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:$SHA_TAG
+          docker push $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:$VERSION-pre
           docker push $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:pre
-          echo "sha_tag=$SHA_TAG" >> $GITHUB_OUTPUT
+          echo "Pushed: $VERSION-pre and :pre (sha: $SHA_TAG)"
 
   # ── Stage 4: Deploy :pre to Staging ──────────────────────────────
   deploy-staging:
@@ -138,11 +156,24 @@ jobs:
           ECR_REGISTRY: public.ecr.aws
           ECR_ALIAS: ${{ secrets.ECR_PUBLIC_ALIAS }}
           AWS_REGION: us-east-1
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           docker pull $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:pre
-          docker tag $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:pre $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:rc
+
+          VERSION=$(docker inspect $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:pre \
+            --format '{{ index .Config.Labels "version"}}')
+
+          echo "Promoting version: $VERSION"
+
+          docker tag $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:pre \
+            $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:$VERSION-rc
+          docker tag $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:pre \
+            $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:rc
+
+          docker push $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:$VERSION-rc
           docker push $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:rc
-          echo "Successfully promoted :pre to :rc"
+
+          echo "Successfully promoted $VERSION :pre to :rc"
 
   # ── Stage 5: Deploy :rc to Prod ──────────────────────────────
   deploy-prod:
