@@ -74,15 +74,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Get version
+      - name: Get and bump version
         id: version
         run: |
-          VERSION=$(git tag --points-at HEAD | grep '^v' | head -n1)
-          if [ -z "$VERSION" ]; then
-            VERSION="sha-${GITHUB_SHA::8}"
+          git fetch --tags
+
+          LATEST=$(git tag -l 'v*' | sort -V | tail -n1)
+
+          if [ -z "$LATEST" ]; then
+            VERSION="v0.1.0"
+          else
+            MAJOR=$(echo $LATEST | cut -d. -f1 | tr -d 'v')
+            MINOR=$(echo $LATEST | cut -d. -f2)
+            PATCH=$(echo $LATEST | cut -d. -f3)
+            VERSION="v$MAJOR.$MINOR.$((PATCH + 1))"
           fi
+
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Version: $VERSION"
+
+      - name: Create and push git tag
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git tag $VERSION
+          git push origin $VERSION
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
