@@ -122,22 +122,18 @@ jobs:
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_ALIAS: ${{ secrets.ECR_PUBLIC_ALIAS }}
-          SHA_TAG: sha-${{ github.sha }}
           AWS_REGION: us-east-1
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           docker build \
             --label "version=$VERSION" \
             --label "sha=${{ github.sha }}" \
-            -t $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:$SHA_TAG .
-          docker tag $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:$SHA_TAG \
-            $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:$VERSION-pre
-          docker tag $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:$SHA_TAG \
+            -t $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:$VERSION-pre .
+          docker tag $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:$VERSION-pre \
             $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:pre
-          docker push $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:$SHA_TAG
           docker push $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:$VERSION-pre
           docker push $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:pre
-          echo "Pushed: $VERSION-pre and :pre (sha: $SHA_TAG)"
+          echo "Pushed: $VERSION-pre and :pre"
 
   # ── Stage 4: Deploy :pre to Staging ──────────────────────────────
   deploy-staging:
