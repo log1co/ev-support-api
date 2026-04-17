@@ -114,7 +114,7 @@ jobs:
 
   # ── Stage 5: Promote :pre to :rc and deploy to Prod ──────────────
   promote-to-prod:
-    name: Promote to Prod
+    name: Promote to image to :rc
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' && inputs.promote_to_prod == true
     steps:
@@ -144,9 +144,9 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_ALIAS/$ECR_REPOSITORY:rc
           echo "Successfully promoted :pre to :rc"
 
-  # ── Stage 4: Deploy :pre to Staging ──────────────────────────────
+  # ── Stage 5: Deploy :rc to Prod ──────────────────────────────
   deploy-prod:
-    name: Deploy to Prod
+    name: Deploy :rc to Prod
     runs-on: ubuntu-latest
     needs: promote-to-prod
     if: github.event_name == 'workflow_dispatch' && inputs.promote_to_prod == true
